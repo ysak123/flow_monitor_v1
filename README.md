@@ -167,6 +167,8 @@ To start over, close the helper window and delete `monitor_config.json`.
 | `monitor_config.example.json` | Template for your personal `monitor_config.json`. |
 | `monitor_config.json` | Your saved connection, categories and settings (created for you, never committed). |
 | `docs/images/` | Screenshots used by this README and the in-page guide (demo data). |
+| `docs/flow_monitor_tutorial.mp4` | A 5-minute narrated video tutorial for new users (subtitles included). |
+| `icons/` | The app icon (`icon.svg`, `icon-256.png`, `icon.ico`). |
 
 ## Adding another flow later (e.g. STA)
 

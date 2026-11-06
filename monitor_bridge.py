@@ -37,6 +37,7 @@ AGENT_SRC = os.path.join(HERE, "remote_agent.py")
 PAGE = os.path.join(HERE, "monitor.html")
 CONFIG = os.path.join(HERE, "monitor_config.json")
 IMAGES = os.path.join(HERE, "docs", "images")
+ICONS = os.path.join(HERE, "icons")
 MARK = "@@APX "
 
 # Single-quoted so it survives both bash and csh login shells (no ! or $ inside).
@@ -326,6 +327,15 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html", "/monitor.html"):
             with open(PAGE, "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
+        if path.startswith("/icons/") or path == "/favicon.ico":
+            name = "icon.ico" if path == "/favicon.ico" else os.path.basename(path)
+            fp = os.path.join(ICONS, name)
+            types = {".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
+            ext = os.path.splitext(name)[1].lower()
+            if re.match(r"^[\w.-]+$", name) and ext in types and os.path.isfile(fp):
+                with open(fp, "rb") as f:
+                    return self._send(200, f.read(), types[ext])
+            return self._send(404, {"error": "not found"})
         if path.startswith("/docs/images/"):
             name = os.path.basename(path)
             fp = os.path.join(IMAGES, name)
