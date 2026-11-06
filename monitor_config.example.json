@@ -1,0 +1,9 @@
+{
+  "host": "your-linux-login-host.example.com",
+  "user": "your_linux_username",
+  "key": "C:/Users/your_windows_name/.ssh/id_rsa",
+  "port": 22,
+  "python": "python3",
+  "sound": "C:\\Windows\\Media\\Alarm01.wav",
+  "alarm_minutes": 20
+}

@@ -1,0 +1,9 @@
+# Personal settings and categories (copy monitor_config.example.json to start your own)
+monitor_config.json
+monitor_config.json.tmp
+
+# Old notification tool, not part of this project
+assets/
+
+__pycache__/
+*.pyc

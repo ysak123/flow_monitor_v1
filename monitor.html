@@ -1,0 +1,1502 @@
+﻿<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow monitor</title>
+<style>
+:root,[data-theme=dark]{
+  --bg:#13232A; --panel:#192D35; --panel2:#20373F; --line:#29434D; --line2:#37555F;
+  --text:#E4EEF0; --muted:#8FA9B0; --faint:#6C8790;
+  --pass:#7FCB8F; --fail:#E36B6B; --stale:#B9A46A; --invalid:#D98B5F;
+  --logbg:#0F1D22; --logtext:#C9D8DC; --shade:rgba(5,12,15,.5); --hit:rgba(224,164,90,.16);
+  --accent:#E0A45A; --on-accent:#1d1407;
+}
+[data-theme=light]{
+  --bg:#EEF3F4; --panel:#FFFFFF; --panel2:#F4F8F9; --line:#D3DEE1; --line2:#B9C9CE;
+  --text:#14262C; --muted:#567077; --faint:#7D959B;
+  --pass:#2D8650; --fail:#C23B38; --stale:#8A7432; --invalid:#B5602F;
+  --logbg:#F8FBFB; --logtext:#1E3238; --shade:rgba(20,38,44,.25); --hit:rgba(176,106,31,.13);
+  --accent:#B06A1F; --on-accent:#ffffff;
+}
+:root{
+  --ui:"Bahnschrift","Segoe UI",system-ui,sans-serif;
+  --narrow:"Bahnschrift SemiCondensed","Bahnschrift","Segoe UI",sans-serif;
+  --mono:"Cascadia Mono","Cascadia Code",Consolas,monospace;
+  color-scheme:dark;
+}
+[data-theme=light]{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14.5px/1.5 var(--ui)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+.btn{background:var(--accent);color:var(--on-accent);border:0;border-radius:5px;padding:7px 15px;font-weight:600;cursor:pointer}
+.btn:hover{filter:brightness(1.06)}
+.btn.quiet{background:transparent;color:var(--text);border:1px solid var(--line2);font-weight:500}
+.btn.small{padding:4px 11px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.icon{background:transparent;border:0;color:var(--muted);cursor:pointer;border-radius:5px;padding:4px 8px;font-size:16px;line-height:1}
+.icon:hover{color:var(--text);background:color-mix(in srgb,var(--text) 7%,transparent)}
+input[type=text],input[type=number],select,textarea{background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+  padding:7px 9px;font-size:13.5px;width:100%;min-width:0}
+textarea{resize:vertical;font-family:var(--mono);font-size:12.5px;line-height:1.55}
+
+/* ------------------------------------------------------------- top bar + tabs */
+.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.top .in{max-width:1120px;margin:0 auto;padding:0 28px;display:flex;align-items:center;gap:14px;height:58px}
+.top h1{margin:0 18px 0 0;font-size:18px;font-weight:600}
+.tabs{display:flex;gap:4px;align-self:stretch;margin-right:auto}
+.tab{background:transparent;border:0;border-bottom:2px solid transparent;padding:0 14px;cursor:pointer;color:var(--muted);
+     font-size:15px;display:flex;align-items:center;gap:7px}
+.tab:hover{color:var(--text)}
+.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.tab .n{font-size:11.5px;font-weight:700;color:#fff;background:var(--fail);border-radius:9px;padding:0 6px;line-height:17px}
+.chip{display:flex;align-items:center;gap:8px;background:transparent;border:1px solid var(--line);border-radius:20px;
+      padding:5px 13px;cursor:pointer;color:var(--muted);font-size:13px;white-space:nowrap}
+.chip:hover{border-color:var(--line2);color:var(--text)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.chip[data-state=connected] .dot{background:var(--pass)}
+.chip[data-state=connecting] .dot{background:var(--accent);animation:pulse 1s infinite}
+.chip.err .dot{background:var(--fail)}
+
+.banner{max-width:1120px;margin:14px auto 0;padding:0 28px;display:grid;gap:8px}
+.banner>div{display:flex;align-items:center;gap:14px;padding:10px 16px;border-radius:6px;font-size:13.5px}
+.banner .off{border:1px solid color-mix(in srgb,var(--fail) 45%,transparent);background:color-mix(in srgb,var(--fail) 6%,transparent)}
+.banner .alarm{background:var(--fail);color:#fff;font-weight:600}
+.banner .alarm.ok{background:var(--pass)}
+.banner .btn{margin-left:auto}
+.banner .alarm .btn{background:rgba(0,0,0,.35);color:#fff}
+
+.page{max-width:1120px;margin:0 auto;padding:22px 28px 80px}
+body.offline .cat,body.offline .attn{opacity:.55}
+
+/* ------------------------------------------------------------- needs attention */
+.attn{margin-bottom:30px;border:1px solid color-mix(in srgb,var(--fail) 40%,var(--line));border-radius:8px;
+      background:color-mix(in srgb,var(--fail) 4%,var(--panel))}
+.attn h2{margin:0;padding:12px 18px 4px;font-size:15px;font-weight:600}
+.arow{display:grid;grid-template-columns:84px minmax(0,1.2fr) minmax(0,1.6fr) auto;gap:14px;align-items:center;padding:9px 18px;
+      border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.arow:first-of-type{border-top:0}
+.arow .who{background:transparent;border:0;padding:0;text-align:left;cursor:pointer;min-width:0}
+.arow .who b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .who span{display:block;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arow .why{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ------------------------------------------------------------- categories */
+.cat{margin-bottom:30px}
+.cathead{display:flex;align-items:baseline;gap:12px;padding:0 4px 10px}
+.cathead .tog{background:transparent;border:0;padding:0;cursor:pointer;display:flex;align-items:baseline;gap:10px;text-align:left;min-width:0}
+.cathead .chev{color:var(--muted);font-size:12px;width:12px;display:inline-block;transition:transform .15s}
+.cat.collapsed .chev{transform:rotate(-90deg)}
+.cathead h2{margin:0;font-size:19px;font-weight:600}
+.cathead .note{color:var(--muted);font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cathead .sum{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
+.cathead .sum b{font-weight:600}
+.cat.collapsed .rows{display:none}
+
+.rows{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.item{border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item.flash{animation:flash 1.4s ease-out}
+@keyframes flash{0%{background:var(--hit)}100%{background:transparent}}
+.item .line{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:6px;padding:0 10px 0 0}
+.item .main{display:grid;grid-template-columns:24px minmax(0,1fr) 44px 112px 250px 90px;align-items:center;gap:14px;
+            background:transparent;border:0;text-align:left;padding:13px 0 13px 12px;cursor:pointer;border-radius:8px}
+.item .main:hover .nm{text-decoration:underline;text-decoration-color:var(--line2);text-underline-offset:3px}
+.item .chev{color:var(--faint);font-size:11px;transition:transform .15s}
+.item.open .chev{transform:rotate(90deg)}
+.item .who{min-width:0}
+.item .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.item .lb{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:11.5px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:1px 6px;justify-self:start}
+.st{font-weight:600;font-size:13.5px}
+.st.RUNNING{color:var(--accent)} .st.FAILED,.st.ERROR,.st.SILENT,.st.STOPPED{color:var(--fail)}
+.st.COMPLETE{color:var(--pass)} .st.IDLE,.st.UNKNOWN,.st.ACTIVE,.st.WAIT{color:var(--muted)}
+.prog{min-width:0}
+.prog .bar{display:block;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.prog .bar i{display:block;height:100%;background:var(--pass)}
+.prog .bar.FAILED i,.prog .bar.STOPPED i{background:var(--fail)}
+.prog .bar.RUNNING i{background:linear-gradient(90deg,var(--pass),var(--accent))}
+.prog .cur{display:block;font-size:12.5px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when{font-size:12.5px;color:var(--muted);text-align:right;white-space:nowrap}
+
+.detail{padding:4px 22px 20px 48px}
+.detail .path{font-family:var(--mono);font-size:12px;color:var(--faint);word-break:break-all}
+.detail .acts{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.detail .facts{display:flex;flex-wrap:wrap;gap:4px 24px;font-size:13px;color:var(--muted);margin-top:10px}
+.detail .facts b{color:var(--text);font-weight:600}
+.hint{font-size:12.5px;color:var(--faint)}
+.msg{margin-top:12px;padding:9px 13px;border-radius:5px;font-size:13px;border:1px solid var(--line)}
+.msg.bad{border-color:color-mix(in srgb,var(--fail) 50%,transparent);background:color-mix(in srgb,var(--fail) 6%,transparent)}
+.msg.good{border-color:color-mix(in srgb,var(--pass) 45%,transparent);background:color-mix(in srgb,var(--pass) 5%,transparent)}
+.msg.warn{border-color:color-mix(in srgb,var(--stale) 50%,transparent);background:color-mix(in srgb,var(--stale) 6%,transparent)}
+.msg pre{margin:4px 0 0;font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+.msg.run{font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-all}
+
+/* routed-wire pipeline */
+.wire{display:flex;margin:16px 0 2px;overflow-x:auto;padding-bottom:4px}
+.via{flex:1 0 70px;position:relative;background:transparent;border:0;padding:0 2px;cursor:pointer;
+     display:flex;flex-direction:column;align-items:center;color:var(--text)}
+.via:disabled,span.via{cursor:default}
+.via .seg{position:absolute;top:9px;left:-50%;right:50%;height:3px;background:var(--line)}
+.via:first-child .seg{display:none}
+.via.pass .seg,.via.running .seg,.via.fail .seg,.via.invalid .seg{background:var(--pass)}
+.via.running .seg{background:linear-gradient(90deg,var(--pass),var(--accent))}
+.via .pad{position:relative;width:18px;height:18px;border-radius:3px;border:2px solid var(--line2);background:var(--panel);
+          display:grid;place-items:center;font-size:10px;font-weight:700}
+.via.pass .pad{background:var(--pass);border-color:var(--pass)}
+.via.running .pad{background:var(--accent);border-color:var(--accent);animation:pulse 1.8s infinite}
+.via.fail .pad{background:var(--fail);border-color:var(--fail);color:#fff}
+.via.invalid .pad{background:var(--invalid);border-color:var(--invalid)}
+.via.stale .pad{border-color:var(--fail);border-style:dashed}
+.via .lbl{font-family:var(--narrow);font-size:12.5px;margin-top:7px;line-height:1.2;text-align:center;color:var(--muted);max-width:92px}
+.via .dur{font-size:11.5px;color:var(--faint);margin-top:2px}
+.via.pass .lbl{color:var(--text)}
+.via.running .lbl,.via.running .dur{color:var(--accent);font-weight:600}
+.via.fail .lbl,.via.stale .lbl{color:var(--fail);font-weight:600}
+button.via:not(:disabled):hover .pad{box-shadow:0 0 0 3px var(--panel),0 0 0 5px var(--muted)}
+button.via:not(:disabled):hover .lbl{color:var(--text)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+.files{margin-top:12px;border:1px solid var(--line);border-radius:5px;max-height:220px;overflow-y:auto}
+.files button{display:grid;grid-template-columns:1fr 80px 110px;gap:12px;width:100%;text-align:left;background:transparent;
+              border:0;border-top:1px solid var(--line);padding:6px 12px;cursor:pointer;font-size:12.5px}
+.files button:first-child{border-top:0}
+.files button:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}
+.files .f{font-family:var(--mono);word-break:break-all}
+.files .r{text-align:right;color:var(--muted)}
+.thresh{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.thresh input{width:72px}
+
+.empty{max-width:560px;margin:80px auto 0}
+.empty h2{font-size:24px;font-weight:600;margin:0 0 8px}
+.empty p{color:var(--muted);margin:0 0 20px}
+
+/* ------------------------------------------------------------- menu + dialogs */
+.menu{position:fixed;z-index:60;min-width:200px;background:var(--panel2);border:1px solid var(--line2);border-radius:7px;
+      padding:5px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.menu button{display:block;width:100%;text-align:left;background:transparent;border:0;padding:7px 11px;border-radius:4px;cursor:pointer;font-size:13.5px}
+.menu button:hover{background:color-mix(in srgb,var(--text) 7%,transparent)}
+.menu .sep{height:1px;background:var(--line);margin:5px 2px}
+.menu .hd{font-size:12px;color:var(--faint);padding:5px 11px 2px}
+.menu .danger{color:var(--fail)}
+
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line2);border-radius:10px;padding:0;width:min(560px,94vw)}
+dialog::backdrop{background:var(--shade)}
+dialog form{padding:22px 24px;display:grid;gap:14px}
+dialog h3{margin:0;font-size:18px;font-weight:600}
+dialog label{display:grid;gap:5px;font-size:13px;color:var(--muted)}
+dialog .row{display:flex;gap:10px;justify-content:flex-end;align-items:center;margin-top:4px}
+dialog .grid2{display:grid;grid-template-columns:1fr 90px;gap:12px}
+dialog fieldset{border:0;border-top:1px solid var(--line);padding:14px 0 0;margin:0;display:grid;gap:12px}
+dialog legend{font-size:13px;color:var(--text);font-weight:600;padding:0 8px 0 0}
+dialog .chk{display:flex;align-items:center;gap:8px;color:var(--text);cursor:pointer}
+dialog .err{color:var(--fail);font-size:13px}
+dialog .ok{color:var(--pass);font-size:13px}
+.keybox{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:-4px}
+.keybox .msgline{flex:1 1 100%}
+.keybox .ok{color:var(--pass)} .keybox .bad{color:var(--fail)}
+.radios{display:flex;gap:18px;flex-wrap:wrap}
+.radios label{display:flex;align-items:center;gap:7px;color:var(--text);cursor:pointer}
+.accentrow{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text)}
+.accentrow input[type=color]{width:42px;height:30px;border:1px solid var(--line2);border-radius:5px;background:transparent;padding:2px;cursor:pointer}
+
+/* ------------------------------------------------------------- log drawer */
+.shade{position:fixed;inset:0;background:var(--shade);z-index:40;opacity:0;pointer-events:none;transition:opacity .18s}
+.shade.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(940px,95vw);z-index:50;background:var(--logbg);border-left:1px solid var(--line2);
+        display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s ease-out;box-shadow:-20px 0 40px rgba(0,0,0,.2)}
+.drawer.on{transform:none}
+.dhead{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.dhead .t{font-weight:600;font-size:16px}
+.dhead .p{font-family:var(--mono);font-size:11.5px;color:var(--faint);word-break:break-all;margin-top:2px}
+.dhead .m{font-size:12.5px;color:var(--muted);margin-top:4px}
+.dhead .sp{margin-left:auto;white-space:nowrap;flex:none}
+.dtools{display:flex;align-items:center;gap:14px;padding:9px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden}
+.seg button{background:transparent;border:0;border-left:1px solid var(--line2);padding:5px 13px;cursor:pointer;font-size:13px;color:var(--muted)}
+.seg button:first-child{border-left:0}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--on-accent);font-weight:600}
+.seg button .c{font-weight:700;margin-left:4px}
+.dtools input[type=text]{width:200px}
+.dtools label{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+.grp{flex:0 0 auto;max-height:36%;overflow-y:auto;border-bottom:1px solid var(--line);background:var(--panel)}
+.grp button{display:grid;grid-template-columns:52px minmax(0,1fr) 92px;gap:12px;width:100%;text-align:left;background:transparent;border:0;
+            border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:7px 18px;cursor:pointer;font-size:12.5px;align-items:baseline}
+.grp button:first-child{border-top:0}
+.grp button:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}
+.grp button[aria-current=true]{background:var(--hit);box-shadow:inset 3px 0 0 var(--accent)}
+.grp .c{font-weight:700;text-align:right;color:var(--fail)}
+.grp.warning .c{color:var(--stale)}
+.grp .t{font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grp .l{color:var(--faint);text-align:right}
+.ctxbar{display:flex;align-items:center;gap:10px;padding:7px 18px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted);background:var(--panel)}
+.ctxbar .sp{margin-left:auto}
+#logBody{flex:1;margin:0;padding:12px 18px;overflow:auto;font:12px/1.6 var(--mono);color:var(--logtext);white-space:pre}
+#logBody.wrap{white-space:pre-wrap;word-break:break-all}
+#logBody .e{color:var(--fail)} #logBody .w{color:var(--stale)}
+#logBody mark{background:color-mix(in srgb,var(--accent) 35%,transparent);color:inherit;border-radius:2px}
+#logBody .ph{color:var(--muted);font-family:var(--ui);white-space:normal}
+#logBody .ln{display:inline-block;width:7ch;color:var(--faint);text-align:right;margin-right:14px;user-select:none}
+#logBody .hitline{display:inline-block;min-width:100%;background:var(--hit);box-shadow:inset 3px 0 0 var(--accent)}
+
+/* ------------------------------------------------------------- connect screen */
+.gate{position:fixed;inset:0;z-index:35;background:var(--bg);display:grid;place-items:center;overflow:auto;padding:24px}
+.gcard{width:min(540px,100%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:28px 30px}
+.gcard h1{margin:0 0 6px;font-size:24px;font-weight:600}
+.gcard .lead{margin:0 0 20px;color:var(--muted);font-size:14px}
+.gcard form{display:grid;gap:14px}
+.gcard label{display:grid;gap:5px;font-size:13px;color:var(--muted)}
+.gcard .g2{display:grid;grid-template-columns:1fr 90px;gap:12px}
+.gcard details summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.gcard .grow{display:flex;gap:10px;margin-top:4px}
+.gmsg{font-size:13.5px}
+.gmsg.err{color:var(--fail)} .gmsg.busy{color:var(--accent)}
+
+/* ------------------------------------------------------------- guide */
+#dlgGuide{width:min(920px,96vw);max-height:92vh;overflow:hidden}
+#dlgGuide .gwrap{display:grid;grid-template-columns:200px minmax(0,1fr);height:calc(92vh - 2px)}
+#dlgGuide nav{border-right:1px solid var(--line);padding:22px 10px;overflow-y:auto;background:var(--panel2)}
+#dlgGuide nav b{display:block;padding:0 10px 10px;font-size:15px}
+#dlgGuide nav a{display:block;padding:5px 10px;border-radius:4px;color:var(--muted);text-decoration:none;font-size:13.5px}
+#dlgGuide nav a:hover{color:var(--text);background:color-mix(in srgb,var(--text) 6%,transparent)}
+#dlgGuide .gbody{overflow-y:auto;padding:22px 30px 30px;position:relative}
+#dlgGuide .gclose{position:sticky;top:0;float:right;margin:-8px -14px 0 0}
+#dlgGuide h2{margin:0 0 6px;font-size:22px;font-weight:600}
+#dlgGuide h3{margin:30px 0 6px;font-size:17px;font-weight:600;scroll-margin-top:10px}
+#dlgGuide h3 .k{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--accent);
+                color:var(--on-accent);font-size:13px;margin-right:9px;vertical-align:2px}
+#dlgGuide p,#dlgGuide li{color:var(--muted);max-width:70ch}
+#dlgGuide p b,#dlgGuide li b{color:var(--text);font-weight:600}
+#dlgGuide code{font-family:var(--mono);font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--text)}
+#dlgGuide img{display:block;width:100%;border:1px solid var(--line);border-radius:6px;margin:12px 0 4px}
+#dlgGuide dl{display:grid;grid-template-columns:110px 1fr;gap:6px 14px;margin:10px 0;font-size:13.5px}
+#dlgGuide dt{font-weight:600} #dlgGuide dd{margin:0;color:var(--muted)}
+
+@media (max-width:900px){
+  #dlgGuide .gwrap{grid-template-columns:1fr}
+  #dlgGuide nav{display:none}
+  .top .in,.page,.banner{padding-left:14px;padding-right:14px}
+  .top h1{display:none}
+  .item .main{grid-template-columns:20px minmax(0,1fr) auto;row-gap:4px}
+  .item .main .tag,.item .main .when{display:none}
+  .item .main .prog{grid-column:2/4}
+  .arow{grid-template-columns:70px minmax(0,1fr) auto}
+  .arow .why{display:none}
+  .detail{padding:4px 14px 18px 20px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="in">
+  <h1>Flow monitor</h1>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Flows"></nav>
+  <button class="btn quiet small" type="button" id="bNewCat">New category</button>
+  <button class="icon" type="button" id="bTheme" title="Switch light or dark" aria-label="Switch light or dark">&#9788;</button>
+  <button class="chip" type="button" id="connChip" title="Connection and settings"><span class="dot"></span><span id="connText">Not connected</span></button>
+  <button class="icon" type="button" id="bSettings" title="Settings" aria-label="Settings">&#9881;</button>
+  <button class="btn quiet small" type="button" id="bGuide">Guide</button>
+</div></header>
+
+<section class="gate" id="gate" aria-label="Connect to your Linux host">
+  <div class="gcard">
+    <h1>Flow monitor</h1>
+    <p class="lead">Connect to your Linux host to start monitoring. Flow monitor only reads files there over SSH; nothing is installed or changed on the host.</p>
+    <form id="gateForm" autocomplete="off">
+      <div class="g2">
+        <label>Host<input type="text" id="gHost" spellcheck="false" placeholder="e.g. pnr-login01.example.com"></label>
+        <label>Port<input type="number" id="gPort" min="1" max="65535"></label>
+      </div>
+      <label>Linux user name<input type="text" id="gUser" spellcheck="false"></label>
+      <label>Private key file<input type="text" id="gKey" spellcheck="false"></label>
+      <div class="keybox" id="gKeyBox"></div>
+      <details><summary>Advanced</summary>
+        <label style="margin-top:10px">Remote Python command<input type="text" id="gPy" spellcheck="false"></label>
+      </details>
+      <div class="gmsg" id="gMsg" hidden></div>
+      <div class="grow">
+        <button class="btn" type="submit" id="gConnect">Connect</button>
+        <button class="btn quiet" type="button" data-act="guide">Read the guide</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="gate" id="stopped" hidden aria-live="assertive">
+  <div class="gcard">
+    <h1>Flow monitor has stopped</h1>
+    <p class="lead">The helper window was closed, so this page can't reach the Linux host any more.
+      Run <b>start_monitor.bat</b> to start it again.</p>
+  </div>
+</section>
+
+<div class="banner" id="bannerBox" hidden></div>
+<div class="page" id="page"></div>
+<div class="menu" id="menu" hidden></div>
+
+<div class="shade" id="shade"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Log viewer">
+  <div class="dhead">
+    <div><div class="t" id="logTitle">Log</div><div class="p" id="logPath"></div><div class="m" id="logMeta"></div></div>
+    <button class="btn quiet small sp" type="button" id="bCopyLog">Copy path</button>
+    <button class="icon" type="button" id="bCloseLog" aria-label="Close log">&#10005;</button>
+  </div>
+  <div class="dtools">
+    <div class="seg" role="group" aria-label="Log view">
+      <button type="button" data-view="tail">Live tail</button>
+      <button type="button" data-view="error">Errors<span class="c" id="cntErr"></span></button>
+      <button type="button" data-view="warning">Warnings<span class="c" id="cntWarn"></span></button>
+    </div>
+    <input type="text" id="logFilter" placeholder="Filter" spellcheck="false">
+    <label><input type="checkbox" id="logWrap"> Wrap lines</label>
+    <label id="followL"><input type="checkbox" id="logFollow" checked> Follow new lines</label>
+  </div>
+  <div class="grp" id="grpPane" hidden></div>
+  <div class="ctxbar" id="ctxBar" hidden></div>
+  <pre id="logBody" tabindex="0"></pre>
+</aside>
+
+<dialog id="dlgGuide" aria-label="Guide"><div class="gwrap">
+  <nav>
+    <b>Guide</b>
+    <a href="#g1">1. Before you start</a><a href="#g2">2. Start the monitor</a><a href="#g3">3. Connect</a>
+    <a href="#g4">4. Add a category</a><a href="#g5">5. Read the overview</a><a href="#g6">6. Look inside a block</a>
+    <a href="#g7">7. Debug a failure</a><a href="#g8">8. Follow a running stage</a><a href="#g9">9. LEC runs</a>
+    <a href="#g10">10. Alerts and themes</a><a href="#g11">If something goes wrong</a>
+  </nav>
+  <div class="gbody">
+    <button class="icon gclose" type="button" id="bCloseGuide" aria-label="Close guide">&#10005;</button>
+    <h2>How to use Flow monitor</h2>
+    <p>Flow monitor shows your APR and LEC runs on the Linux host from your Windows desktop, and takes you straight to the error lines when something breaks.
+      It only <b>reads</b> files over SSH: nothing is installed on the host, nothing there is changed, and no website is hosted anywhere.</p>
+
+    <h3 id="g1"><span class="k">1</span>Before you start (once)</h3>
+    <ul>
+      <li>Windows 10 or 11 (it has the SSH client built in), Python 3 from python.org, and Google Chrome.
+        <code>start_monitor.bat</code> tells you if Python is missing.</li>
+      <li>An SSH key. The monitor finds yours in <code>C:\Users\&lt;you&gt;\.ssh</code> by itself. No key yet? Press <b>Create a key</b> in Settings.</li>
+      <li>The key must be known to the Linux host. Press <b>Install key on host</b> in Settings: a PowerShell window opens where you type your
+        Linux password once. Your password never goes through this page.</li>
+    </ul>
+
+    <h3 id="g2"><span class="k">2</span>Start the monitor</h3>
+    <p>Double-click <code>start_monitor.bat</code>. It first checks that Python and the Windows SSH client are installed and tells you what to do if not.
+      Then a minimised window called <b>Flow monitor bridge</b> appears (the helper), and this page opens in its own window at
+      <code>http://127.0.0.1:8899</code>. <b>Closing either window stops both.</b> <b>127.0.0.1 means your own PC</b>: the helper runs on your desktop and fetches data over SSH, because a browser can't open SSH connections itself.</p>
+
+    <h3 id="g3"><span class="k">3</span>Connect to the Linux host</h3>
+    <p>The page opens on <b>Connect to your Linux host</b>. Fill in the host and your Linux user name; your key is found automatically.
+      Press <b>Connect</b>; the monitoring page appears once SSH works. Next time it connects by itself.
+      To change host later, use <b>Settings</b> (the gear, or the connection pill at the top).</p>
+    <img src="/docs/images/01-connect.png" alt="The connect screen with host, user and key filled in" loading="lazy">
+    <p>Everything you set up, connection, categories and labels, is saved in <code>monitor_config.json</code> next to <code>start_monitor.bat</code>.
+      Copy that file to back it up or to move to another PC. It is personal, so it is never uploaded to git.</p>
+
+    <h3 id="g4"><span class="k">4</span>Add a category and paste your blocks</h3>
+    <p>Pick the <b>APR</b> or <b>LEC</b> tab, then press <b>New category</b>. Give it a name such as <code>APEX version 1.1.2</code> and paste one path per line.
+      Add a label after a <code>|</code> to remember what the run is for: <code>/nfs/.../r2g/blk_b/apr_snps/logs | retry with new floorplan</code>.</p>
+    <p>APR accepts a block root, its <code>apr_snps</code> folder or <code>apr_snps/logs</code>. LEC accepts a block root or <code>lec/&lt;block&gt;/logs</code>.
+      Plain log folders work in either tab. Paste a path into the wrong tab and the page tells you which tab it belongs in.</p>
+    <img src="/docs/images/02-new-category.png" alt="New category dialog with three paths and labels" loading="lazy">
+
+    <h3 id="g5"><span class="k">5</span>Read the overview</h3>
+    <p>Each block is one line: name, your label, status, progress and the current stage. Anything that needs you is collected in <b>Needs attention</b> at the top,
+      and the tab shows how many.</p>
+    <img src="/docs/images/03-overview.png" alt="APR tab with a needs-attention box and two categories" loading="lazy">
+    <dl>
+      <dt>Running</dt><dd>A stage log changed recently and the stage has no pass or fail file yet.</dd>
+      <dt>Failed</dt><dd>A stage wrote a <code>.fail</code> file.</dd>
+      <dt>Stopped</dt><dd>The current stage's log stopped changing with no pass or fail file: the job was probably killed or ran out of resources.</dd>
+      <dt>Complete</dt><dd>The last stage passed.</dd>
+      <dt>Idle</dt><dd>Nothing is running and nothing failed; the next stage hasn't started.</dd>
+      <dt>Silent</dt><dd>A watched log folder has had no writes for longer than its alert time.</dd>
+      <dt>Path problem</dt><dd>The path doesn't exist on the host, or belongs in the other tab.</dd>
+    </dl>
+
+    <h3 id="g6"><span class="k">6</span>Look inside a block</h3>
+    <p>Click a line to open it. The stages are drawn as a wire: green passed, orange running, red failed, hollow not started.
+      Under each stage you see how long it took, or how long it has been running. Press a stage to open its log. <b>Copy run directory</b> puts the path on your clipboard for your terminal.</p>
+    <img src="/docs/images/04-block-details.png" alt="An expanded block showing its stages and run times" loading="lazy">
+
+    <h3 id="g7"><span class="k">7</span>Debug a failure</h3>
+    <p>Press <b>Show errors</b> in Needs attention, or press the failed stage. The log opens on <b>Errors</b>: every error in the whole file, with repeats grouped and counted,
+      in the order they first happened, so the root cause is usually at the top. Click a message to see the lines around it.
+      <b>Previous</b> and <b>Next</b> (or the <code>p</code> and <code>n</code> keys) step through each occurrence. <b>Warnings</b> works the same way.</p>
+    <img src="/docs/images/05-errors.png" alt="Log panel on the Errors view with the lines around the first error" loading="lazy">
+
+    <h3 id="g8"><span class="k">8</span>Follow a running stage</h3>
+    <p><b>Live tail</b> shows the end of the log and adds new lines as they are written. Type in <b>Filter</b> to keep only matching lines. Press <b>Esc</b> or the cross to close the panel.</p>
+    <img src="/docs/images/06-live-tail.png" alt="Log panel following a running stage" loading="lazy">
+
+    <h3 id="g9"><span class="k">9</span>LEC runs</h3>
+    <p>The <b>LEC</b> tab has its own categories. Each run shows its Conformal phase, progress within the phase, key points, run time and memory,
+      and the result from <code>lec_summary.rpt</code> when it finishes.</p>
+    <img src="/docs/images/07-lec.png" alt="LEC tab with a run being mapped" loading="lazy">
+
+    <h3 id="g10"><span class="k">10</span>Alerts, themes and settings</h3>
+    <p>When a block fails, stops, finishes, or a log folder goes silent, the page shows a banner, a Windows notification and plays an alarm sound. Turn these on or off in <b>Settings</b>.
+      The sun and moon button switches light and dark; <b>Settings &rarr; Appearance</b> also offers Follow Windows and your own accent colour.</p>
+    <img src="/docs/images/08-light-theme.png" alt="The overview in the light theme" loading="lazy">
+
+    <h3 id="g11">If something goes wrong</h3>
+    <dl>
+      <dt>"Not connected"</dt><dd>Check VPN, then open Settings and press Connect. "Permission denied": check the user name, then press <b>Install key on host</b>.</dd>
+      <dt>Remote Python</dt><dd>If the host says python3 isn't found, set <b>Remote Python command</b> in Settings, for example <code>/usr/bin/python3</code>.</dd>
+      <dt>Stuck on Checking</dt><dd>Run <code>start_monitor.bat</code> again; it replaces an old helper with the current one.</dd>
+      <dt>"Flow monitor has stopped"</dt><dd>The helper window was closed. Start <code>start_monitor.bat</code> again.</dd>
+    </dl>
+  </div>
+</div></dialog>
+
+<dialog id="dlgCat"><form method="dialog" id="catForm">
+  <h3 id="catTitle">New category</h3>
+  <label id="catNameL">Name<input type="text" id="catName" placeholder="e.g. apex version 1.0.2"></label>
+  <label id="catNoteL">Note (optional)<input type="text" id="catNote" placeholder="What these blocks are for"></label>
+  <label id="catPathsL">Paths, one per line
+    <textarea id="catPaths" rows="5" spellcheck="false"></textarea>
+    <span class="hint" id="catHint"></span>
+  </label>
+  <div class="row"><button class="btn quiet" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok" id="catOk">Create category</button></div>
+</form></dialog>
+
+<dialog id="dlgText"><form method="dialog">
+  <h3 id="textTitle">Edit label</h3>
+  <label><span id="textLabel">Label</span><input type="text" id="textValue"></label>
+  <div class="row"><button class="btn quiet" value="cancel" formnovalidate>Cancel</button><button class="btn" value="ok">Save</button></div>
+</form></dialog>
+
+<dialog id="dlgSettings"><form method="dialog" autocomplete="off">
+  <h3>Settings</h3>
+  <fieldset><legend>Connection</legend>
+    <div class="grid2">
+      <label>Host<input type="text" id="fHost" spellcheck="false"></label>
+      <label>Port<input type="number" id="fPort" min="1" max="65535"></label>
+    </div>
+    <label>User<input type="text" id="fUser" spellcheck="false"></label>
+    <label>Private key file<input type="text" id="fKey" spellcheck="false"></label>
+    <div class="keybox" id="fKeyBox"></div>
+    <label>Remote Python command<input type="text" id="fPy" spellcheck="false"></label>
+    <div id="connMsg" hidden></div>
+    <div class="row" style="justify-content:flex-start">
+      <button class="btn" type="button" id="bConnect">Connect</button>
+      <button class="btn quiet" type="button" id="bDisconnect" hidden>Disconnect</button>
+    </div>
+  </fieldset>
+  <fieldset><legend>Appearance</legend>
+    <div class="radios">
+      <label><input type="radio" name="theme" value="dark"> Dark</label>
+      <label><input type="radio" name="theme" value="light"> Light</label>
+      <label><input type="radio" name="theme" value="system"> Follow Windows</label>
+    </div>
+    <div class="accentrow">Accent colour <input type="color" id="sAccent"> <button class="btn quiet small" type="button" id="bAccentReset">Use default</button></div>
+  </fieldset>
+  <fieldset><legend>Updates and alerts</legend>
+    <label>Check for changes every
+      <select id="sInterval"><option value="0">Never</option><option value="5">5 seconds</option><option value="10">10 seconds</option>
+        <option value="30">30 seconds</option><option value="60">1 minute</option><option value="300">5 minutes</option></select></label>
+    <label class="chk"><input type="checkbox" id="sSound"> Play the alarm sound</label>
+    <label class="chk"><input type="checkbox" id="sNotify"> Show desktop notifications</label>
+    <div><button class="btn quiet small" type="button" id="bTest">Test an alert</button></div>
+  </fieldset>
+  <fieldset><legend>Detection</legend>
+    <div class="grid2">
+      <span>An APR stage is running if its log changed within this many seconds</span><input type="number" id="sAprWin" min="30" step="30">
+      <span>A LEC run is running if its log changed within this many seconds</span><input type="number" id="sLecWin" min="60" step="60">
+      <span>A LEC run is silent after this many seconds without output</span><input type="number" id="sLecSilent" min="300" step="300">
+    </div>
+  </fieldset>
+  <div class="row"><button class="btn" value="close">Done</button></div>
+</form></dialog>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const LS = "flowmon_v3", LS_V2 = "flowmon_v2", LS_V1 = "flowmon_v1";
+const TAIL_MS = 3000, MAX_LINES = 6000, CTX = 40;
+// Adding a flow (e.g. STA) = one entry here plus a resolver/scanner in remote_agent.py.
+const FLOWS = [
+  {id:"apr", name:"APR", noun:"APR",
+   hint:"APR workareas (block root, apr_snps or apr_snps/logs) or plain log folders. Add a label after a | if you like.",
+   example:"/nfs/site/disks/.../r2g/blk_a | retry with new floorplan"},
+  {id:"lec", name:"LEC", noun:"LEC",
+   hint:"LEC runs (block root, lec/<block> or lec/<block>/logs) or plain log folders. Add a label after a | if you like.",
+   example:"/nfs/site/disks/.../r2g/blk_b | netlist from apex 1.1.2"},
+];
+const STATE_LABEL = {RUNNING:"Running", FAILED:"Failed", COMPLETE:"Complete", IDLE:"Idle", SILENT:"Silent", STOPPED:"Stopped",
+  UNKNOWN:"Unknown", ERROR:"Path problem", ACTIVE:"Writing", WAIT:"Checking"};
+const ATTENTION = ["FAILED","STOPPED","SILENT","ERROR"];
+const TYPE_TAG = {apr:"APR", lec:"LEC", log:"Log", auto:""};
+
+let S;
+const R = {conn:{state:"disconnected"}, defaults:{}, data:{}, open:new Set(), prev:{}, busy:false, timer:null, gate:true,
+  retry:0, retryTimer:null, lastOk:null, serverTs:null, everConnected:false, audio:null, alarmStop:null, alarm:null, scanError:null};
+const T = {open:false, path:null, label:"", view:"tail", offset:null, ino:null, lines:[], meta:null, error:null, busy:false, jump:true,
+  grep:{}, gsel:0, occ:0, ctx:null};
+
+// ---------------------------------------------------------------- utils
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function ago(sec){
+  if(sec==null) return "";
+  if(sec<60) return "just now";
+  if(sec<3600) return Math.floor(sec/60)+" min ago";
+  if(sec<86400) return Math.floor(sec/3600)+" h ago";
+  return Math.floor(sec/86400)+" d ago";
+}
+function dur(s){
+  if(s==null || s<0) return ""; s=Math.round(s);
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60);
+  if(h>=48) return `${Math.floor(h/24)} d ${h%24} h`;
+  if(h) return `${h} h ${m} min`;
+  return m ? `${m} min` : `${s} s`;
+}
+function ts(s){ return s ? new Date(String(s).replace(" ","T")).getTime()/1000 : null; }
+function bytes(n){
+  if(n==null) return ""; if(n<1024) return n+" B";
+  if(n<1048576) return (n/1024).toFixed(1)+" KB";
+  if(n<1073741824) return (n/1048576).toFixed(1)+" MB";
+  return (n/1073741824).toFixed(2)+" GB";
+}
+function num(n){ return n==null ? "?" : Number(n).toLocaleString(); }
+function shortName(p){
+  const parts = String(p||"").split("/").filter(Boolean);
+  const cands = parts.slice(-4).filter(s=>!/^(logs?|apr_snps|apr_fc|lec|runs|r2g|default)$/.test(s));
+  if(!cands.length) return parts.slice(-1)[0] || p;
+  return cands.reduce((a,b)=> b.length>a.length ? b : a);
+}
+function blockOf(logsDir){
+  const parts = String(logsDir||"").split("/").filter(Boolean);
+  const i = parts.indexOf("apr_snps");
+  return i>0 ? parts[i-1] : shortName(logsDir);
+}
+function dirname(p){ return String(p||"").replace(/\/+$/,"").replace(/\/[^/]*$/,"") || "/"; }
+function stageName(s){ return String(s||"").replace(/^\d+_/,"").replace(/_/g," "); }
+function flowOf(id){ return FLOWS.find(f=>f.id===id) || FLOWS[0]; }
+
+// ---------------------------------------------------------------- state
+function newItem(path, type, label, silent){ return {id:uid(), path, label:label||"", type:type||"auto", silent:silent||50}; }
+function newCat(name, note){ return {id:uid(), name, note:note||"", collapsed:false, items:[]}; }
+function baseSettings(d){
+  d = d||{};
+  return {host:d.host||"", user:d.user||"", key:d.key||"", port:d.port||22, python:d.python||"python3",
+    interval:10, aprWin:240, lecWin:1800, lecSilent:3600, sound:true, notify:true, autoconnect:false, theme:"dark", accent:null};
+}
+function emptyFlows(){ const f = {}; FLOWS.forEach(x=>f[x.id]={cats:[]}); return f; }
+// Settings and categories live in monitor_config.json (via the helper). Older versions kept
+// them in Chrome's localStorage; those are imported once when the file has no categories yet.
+const UI_KEYS = {interval:"interval", aprWin:"aprWin", lecWin:"lecWin", lecSilent:"lecSilent", alertSound:"sound",
+  notify:"notify", theme:"theme", accent:"accent", autoconnect:"autoconnect"};
+function fromConfig(c, defs){
+  const st = {v:3, tab:"apr", settings:baseSettings(defs), flows:null};
+  for(const k of ["host","user","key","port","python"]) if(c[k]!==undefined && c[k]!=="") st.settings[k] = c[k];
+  const ui = c.ui || {};
+  for(const [fk, sk] of Object.entries(UI_KEYS)) if(ui[fk]!==undefined) st.settings[sk] = ui[fk];
+  if(ui.tab) st.tab = ui.tab;
+  if(c.flows) st.flows = c.flows;
+  return st;
+}
+function toConfig(){
+  const s = S.settings, ui = {tab:S.tab};
+  for(const [fk, sk] of Object.entries(UI_KEYS)) ui[fk] = s[sk];
+  return {host:s.host, user:s.user, key:s.key, port:s.port, python:s.python, ui, flows:S.flows};
+}
+function legacyState(){
+  const read = k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } };
+  const cur = read(LS);
+  if(cur && cur.flows) return cur;
+  const v2 = read(LS_V2), v1 = read(LS_V1);
+  if(!v2 && !v1) return null;
+  const st = {v:3, tab:"apr", settings:{}, flows:emptyFlows()};
+  const put = (flow, catName, note, item) => {
+    let c = st.flows[flow].cats.find(x=>x.name===catName);
+    if(!c){ c = newCat(catName, note); st.flows[flow].cats.push(c); }
+    c.items.push(item);
+  };
+  if(v2 && v2.cats){
+    Object.assign(st.settings, v2.settings||{});
+    v2.cats.forEach(c=>{
+      c.items.forEach(it=>put(it.type==="lec"?"lec":"apr", c.name, c.note, Object.assign({}, it)));
+      if(!c.items.length) st.flows.apr.cats.push(newCat(c.name, c.note));
+    });
+  }else if(v1){
+    Object.assign(st.settings, v1.settings||{});
+    (v1.apr||[]).forEach(p=>put("apr","Unsorted","",newItem(p,"apr")));
+    (v1.lec||[]).forEach(p=>put("lec","Unsorted","",newItem(p,"lec")));
+    (v1.logs||[]).forEach(l=>put("apr","Unsorted","",newItem(l.path,"log","",l.silent)));
+  }
+  return st;
+}
+async function loadState(){
+  const d = await (await fetch("/api/state")).json();
+  R.defaults = d.defaults || {};
+  const st = fromConfig(d.config || {}, R.defaults);
+  const hasCats = f => !!f && FLOWS.some(x=>f[x.id] && f[x.id].cats && f[x.id].cats.length);
+  if(!hasCats(st.flows)){
+    const old = legacyState();
+    if(old && hasCats(old.flows)) st.flows = old.flows;
+    else if(!st.flows) st.flows = emptyFlows();
+    if(old && hasCats(old.flows) && !st.settings.host){
+      Object.assign(st.settings, old.settings||{});
+      if(old.tab) st.tab = old.tab;
+    }
+  }
+  FLOWS.forEach(x=>{ if(!st.flows[x.id]) st.flows[x.id] = {cats:[]}; });
+  if(!st.flows[st.tab]) st.tab = FLOWS[0].id;
+  return st;
+}
+let saveTimer = null;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 300);
+}
+function flushSave(){
+  clearTimeout(saveTimer); saveTimer = null;
+  if(!S) return;
+  fetch("/api/state", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(toConfig())}).catch(()=>{});
+}
+window.addEventListener("pagehide", ()=>{ if(saveTimer && S) navigator.sendBeacon("/api/state", JSON.stringify(toConfig())); });
+function cats(flow){ return S.flows[flow||S.tab].cats; }
+function allItems(){
+  const out = [];
+  FLOWS.forEach(f=>cats(f.id).forEach(c=>c.items.forEach(it=>out.push({flow:f.id, cat:c, it}))));
+  return out;
+}
+function findItem(id){ return allItems().find(x=>x.it.id===id) || null; }
+function parseLines(text){
+  return text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).map(s=>{
+    const i = s.indexOf("|");
+    return i<0 ? {path:s, label:""} : {path:s.slice(0,i).trim(), label:s.slice(i+1).trim()};
+  }).filter(x=>x.path);
+}
+
+// ---------------------------------------------------------------- theme
+function effectiveTheme(){
+  const t = S.settings.theme;
+  if(t==="system") return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return t==="light" ? "light" : "dark";
+}
+function inkFor(hex){
+  const n = parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  return (0.299*r + 0.587*g + 0.114*b)/255 > 0.6 ? "#1d1407" : "#ffffff";
+}
+function applyTheme(){
+  const eff = effectiveTheme(), root = document.documentElement;
+  root.dataset.theme = eff;
+  if(S.settings.accent){ root.style.setProperty("--accent", S.settings.accent); root.style.setProperty("--on-accent", inkFor(S.settings.accent)); }
+  else { root.style.removeProperty("--accent"); root.style.removeProperty("--on-accent"); }
+  $("#bTheme").innerHTML = eff==="dark" ? "&#9788;" : "&#9790;";
+  $("#bTheme").title = eff==="dark" ? "Switch to light" : "Switch to dark";
+}
+function currentAccent(){ return S.settings.accent || getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(); }
+
+// ---------------------------------------------------------------- bridge
+async function call(op, args){
+  const r = await fetch("/api/call", {method:"POST", headers:{"Content-Type":"application/json"},
+                                      body:JSON.stringify(Object.assign({op}, args||{}))});
+  const d = await r.json();
+  if(r.status===503){ setConn(d.conn || {state:"disconnected", error:d.error}); throw new Error(d.error); }
+  if(!r.ok) throw new Error(d.error || ("HTTP "+r.status));
+  return d;
+}
+// Connection fields exist twice: on the connect screen (prefix "g") and in Settings ("f").
+function readConnFrom(p){
+  Object.assign(S.settings, {host:$(`#${p}Host`).value.trim(), user:$(`#${p}User`).value.trim(),
+    port:parseInt($(`#${p}Port`).value,10)||22, key:$(`#${p}Key`).value.trim(), python:$(`#${p}Py`).value.trim()||"python3"});
+  save();
+}
+function fillConn(p){
+  const st = S.settings;
+  $(`#${p}Host`).value = st.host; $(`#${p}User`).value = st.user; $(`#${p}Port`).value = st.port;
+  $(`#${p}Key`).value = st.key; $(`#${p}Py`).value = st.python;
+}
+function renderGate(){
+  $("#gate").hidden = !R.gate;
+  if(!R.gate) return;
+  const c = R.conn, m = $("#gMsg"), b = $("#gConnect");
+  b.disabled = c.state==="connecting";
+  b.textContent = c.state==="connecting" ? "Connecting..." : "Connect";
+  m.hidden = !(c.state==="connecting" || c.error);
+  m.className = "gmsg " + (c.state==="connecting" ? "busy" : "err");
+  m.textContent = c.state==="connecting" ? `Connecting to ${(c.target&&c.target.host)||S.settings.host}...` : (c.error||"");
+}
+async function connect(auto, p){
+  clearTimeout(R.retryTimer);
+  if(!auto){ readConnFrom(p||"f"); askNotifyPermission(); }
+  const st = S.settings;
+  setConn({state:"connecting", target:{host:st.host, user:st.user}});
+  try{
+    const r = await fetch("/api/connect", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({host:st.host, user:st.user, key:st.key, port:st.port, python:st.python})});
+    const d = await r.json();
+    if(!r.ok){ setConn(Object.assign({state:"disconnected"}, d.conn||{}, {error:d.error})); scheduleReconnect(); return; }
+    R.retry = 0; R.everConnected = true; S.settings.autoconnect = true; save();
+    setConn(d); tick(); if(T.open) refreshDrawer();
+  }catch(e){
+    setConn({state:"disconnected", error:"The desktop helper isn't running. Start it with start_monitor.bat."});
+  }
+}
+async function disconnect(){
+  clearTimeout(R.retryTimer);
+  S.settings.autoconnect = false; save();
+  try{ setConn(await (await fetch("/api/disconnect",{method:"POST"})).json()); }catch(e){ setConn({state:"disconnected"}); }
+  $("#dlgSettings").close();
+  R.gate = true; fillConn("g"); renderGate();
+}
+function scheduleReconnect(){
+  if(!S.settings.autoconnect || !R.everConnected || R.gate) return;
+  const waits = [5,10,30,60,120], w = waits[Math.min(R.retry, waits.length-1)];
+  R.retry++; clearTimeout(R.retryTimer);
+  R.retryTimer = setTimeout(()=>connect(true), w*1000);
+  R.conn.retryIn = w; renderConn(); renderBanner();
+}
+function setConn(c){
+  const was = R.conn.state;
+  R.conn = c || {state:"disconnected"};
+  if(was==="connected" && R.conn.state==="disconnected"){ notify("SSH connection lost", R.conn.error || "Trying to reconnect."); scheduleReconnect(); }
+  if(R.conn.state==="connected") R.gate = false;
+  renderConn(); renderBanner(); renderGate(); document.body.classList.toggle("offline", R.conn.state!=="connected");
+}
+
+// ---------------------------------------------------------------- polling
+async function tick(){
+  if(R.conn.state!=="connected" || R.busy) return;
+  const list = allItems();
+  if(!list.length) return;
+  R.busy = true;
+  try{
+    const st = S.settings;
+    const items = list.map(({flow, it})=>({id:it.id, path:it.path, type:it.type, flow, list:it.type==="log" && R.open.has(it.id)}));
+    const d = await call("scan", {items, apr_window:st.aprWin, lec_window:st.lecWin, lec_silent:st.lecSilent});
+    let changed = false;
+    for(const r of d.results){
+      R.data[r.id] = r;
+      const f = findItem(r.id);
+      if(f && f.it.type==="auto" && r.type && r.type!=="auto" && !r.error){ f.it.type = r.type; changed = true; }
+    }
+    if(changed) save();
+    R.serverTs = ts(d.server_time);
+    R.lastOk = new Date(); R.scanError = null;
+    checkAlerts();
+  }catch(e){
+    if(R.conn.state==="connected") R.scanError = e.message;
+  }
+  finally{ R.busy = false; render(); renderBanner(); }
+}
+function schedule(){
+  clearInterval(R.timer);
+  const s = parseInt(S.settings.interval,10);
+  if(s>0) R.timer = setInterval(tick, s*1000);
+}
+
+// ---------------------------------------------------------------- summaries
+function stageTimes(w){
+  const out = {}; let prevEnd = null;
+  for(const s of w.stages){
+    const end = ts(s.status_mtime);
+    const t = {};
+    if((s.status==="pass" || s.status==="fail") && end && prevEnd) t.took = end - prevEnd;
+    if(s.status==="running" && prevEnd && R.serverTs) t.elapsed = R.serverTs - prevEnd;
+    out[s.stage] = t;
+    if(s.status==="pass" && end) prevEnd = end;
+  }
+  return out;
+}
+function summary(it){
+  const w = R.data[it.id];
+  const base = {name:shortName(it.path), state:"WAIT", stateText:"Checking", pct:null, cur:"", when:"", why:""};
+  if(!w) return base;
+  if(w.error) return Object.assign(base, {state:"ERROR", stateText:"Path problem", cur:w.error, why:w.error});
+  if(w.type==="apr"){
+    const times = stageTimes(w);
+    const cs = w.stages.find(s=>s.stage===w.current);
+    const stopped = w.state==="IDLE" && w.stages.some(s=>s.status==="stale");
+    const state = stopped ? "STOPPED" : w.state;
+    const el = cs && times[cs.stage].elapsed;
+    const cur = w.state==="RUNNING" && el!=null ? `${stageName(w.current)}, running for ${dur(el)}`
+      : `${w.current?stageName(w.current):"no stage"}, ${w.progress.pass} of ${w.progress.total} passed`;
+    const why = state==="FAILED" ? `${stageName(w.current)} failed` :
+      stopped ? `${stageName(w.current)} log stopped ${ago(cs&&cs.log_age)}, the job may have died` : "";
+    return {name:blockOf(w.logs_dir), state, stateText:STATE_LABEL[state], pct:w.progress.pct, cur,
+      when: cs && cs.log_age!=null ? ago(cs.log_age) : "", why};
+  }
+  if(w.type==="lec"){
+    const done = w.phases.filter(p=>p.status==="pass").length;
+    return {name:w.block, state:w.state, stateText:(STATE_LABEL[w.state]||w.state)+(w.final_status?` (${w.final_status})`:""),
+      pct:Math.round(100*done/w.phases.length), cur:`${w.current}${w.pct!=null?" "+w.pct+"%":""}`, when:ago(w.log_age),
+      why: w.state==="FAILED" ? `Result ${w.final_status||"failed"}` : w.state==="SILENT" ? `No output for ${dur(w.log_age)} during ${w.current}` : ""};
+  }
+  const silent = w.age!=null && w.age > it.silent*60;
+  return {name:shortName(it.path), state:silent?"SILENT":"ACTIVE", stateText:silent?"Silent":"Writing", pct:null,
+    cur: w.kind==="dir" ? (w.newest ? `newest: ${w.newest}` : "empty folder") : bytes(w.size), when:ago(w.age),
+    why: silent ? `Nothing written for ${dur(w.age)}` : ""};
+}
+function attentionOf(flow){
+  const out = [];
+  cats(flow).forEach(c=>c.items.forEach(it=>{ const s = summary(it); if(ATTENTION.includes(s.state)) out.push({cat:c, it, s}); }));
+  return out;
+}
+
+// ---------------------------------------------------------------- rendering
+function renderTabs(){
+  $("#tabs").innerHTML = FLOWS.map(f=>{
+    const n = attentionOf(f.id).length;
+    return `<button class="tab" type="button" role="tab" data-tab="${f.id}" aria-selected="${S.tab===f.id}">${f.name}${n?`<span class="n" title="${n} need attention">${n}</span>`:""}</button>`;
+  }).join("");
+  $("#bNewCat").textContent = `New ${flowOf(S.tab).noun} category`;
+}
+function render(){
+  renderTabs();
+  const page = $("#page"), list = cats(), f = flowOf(S.tab);
+  if(!list.length){
+    page.innerHTML = `<div class="empty"><h2>No ${f.name} blocks yet</h2>
+      <p>Create a category, for example "apex version 1.0.2", and paste the paths of its ${f.name} runs. Each block shows as one line; open it only when you need the details.</p>
+      <button class="btn" type="button" data-act="newcat">Create a ${f.noun} category</button>
+      <button class="btn quiet" type="button" data-act="guide" style="margin-left:8px">Read the guide</button></div>`;
+    return;
+  }
+  page.innerHTML = attnHTML() + list.map(catHTML).join("");
+}
+
+function attnHTML(){
+  const a = attentionOf(S.tab);
+  if(!a.length) return "";
+  return `<section class="attn"><h2>Needs attention</h2>${a.map(({cat, it, s})=>{
+    const w = R.data[it.id];
+    const act = s.state==="ERROR" ? "" : (s.state==="FAILED"
+      ? `<button class="btn small" type="button" data-act="showerrors" data-id="${it.id}">Show errors</button>`
+      : `<button class="btn quiet small" type="button" data-act="openlog" data-id="${it.id}">Open log</button>`);
+    return `<div class="arow"><span class="st ${s.state}">${esc(s.stateText)}</span>
+      <button class="who" type="button" data-act="goto" data-id="${it.id}"><b>${esc(s.name)}</b><span>${esc(cat.name)}${it.label?", "+esc(it.label):""}</span></button>
+      <span class="why" title="${esc(s.why)}">${esc(s.why)}</span>${act}</div>`;
+  }).join("")}</section>`;
+}
+
+function catHTML(c){
+  const sums = c.items.map(summary);
+  const n = c.items.length, count = k => sums.filter(s=>s.state===k).length;
+  const parts = [`${n} block${n===1?"":"s"}`];
+  if(count("RUNNING")) parts.push(`<b style="color:var(--accent)">${count("RUNNING")} running</b>`);
+  const bad = sums.filter(s=>ATTENTION.includes(s.state)).length;
+  if(bad) parts.push(`<b style="color:var(--fail)">${bad} need${bad===1?"s":""} attention</b>`);
+  if(count("COMPLETE")) parts.push(`<b style="color:var(--pass)">${count("COMPLETE")} complete</b>`);
+  return `<section class="cat${c.collapsed?" collapsed":""}" data-cat="${c.id}">
+    <div class="cathead">
+      <button type="button" class="tog" data-act="toggle" aria-expanded="${!c.collapsed}"><span class="chev">&#9662;</span><h2>${esc(c.name)}</h2></button>
+      ${c.note?`<span class="note" title="${esc(c.note)}">${esc(c.note)}</span>`:""}
+      <span class="sum">${parts.join(", ")}</span>
+      <button type="button" class="icon" data-act="catmenu" aria-label="Category options">&#8943;</button>
+    </div>
+    <div class="rows">${n ? c.items.map((it,i)=>itemHTML(it, sums[i])).join("") :
+      `<div style="padding:16px 18px;color:var(--muted)">No blocks yet. <button class="btn quiet small" type="button" data-act="addpaths">Add paths</button></div>`}</div>
+  </section>`;
+}
+
+function itemHTML(it, s){
+  const open = R.open.has(it.id);
+  const bar = s.pct!=null ? `<span class="bar ${s.state}"><i style="width:${s.pct}%"></i></span>` : "";
+  return `<div class="item${open?" open":""}" data-item="${it.id}" id="it-${it.id}">
+    <div class="line">
+      <button type="button" class="main" data-act="expand" aria-expanded="${open}">
+        <span class="chev">&#9654;</span>
+        <span class="who"><span class="nm" title="${esc(it.path)}">${esc(s.name)}</span>${it.label?`<span class="lb">${esc(it.label)}</span>`:""}</span>
+        <span class="tag"${TYPE_TAG[it.type]?"":" hidden"}>${TYPE_TAG[it.type]||""}</span>
+        <span class="st ${s.state}">${esc(s.stateText)}</span>
+        <span class="prog">${bar}<span class="cur">${esc(s.cur)}</span></span>
+        <span class="when">${esc(s.when)}</span>
+      </button>
+      <button type="button" class="icon" data-act="itemmenu" aria-label="Block options">&#8943;</button>
+    </div>
+    ${open ? `<div class="detail">${detailHTML(it)}</div>` : ""}
+  </div>`;
+}
+
+function copyBtn(text, label){ return `<button class="btn quiet small" type="button" data-act="copy" data-text="${esc(text)}">${esc(label)}</button>`; }
+
+function detailHTML(it){
+  const w = R.data[it.id];
+  const path = `<div class="path">${esc(it.path)}</div>`;
+  if(!w) return path + `<div class="msg">Waiting for the first check${R.conn.state==="connected"?"":" (not connected)"}.</div>`;
+  if(w.error) return path + `<div class="msg bad">${esc(w.error)}.</div>`;
+  if(w.type==="apr") return path + aprDetail(it, w);
+  if(w.type==="lec") return path + lecDetail(it, w);
+  return path + logDetail(it, w);
+}
+
+function aprDetail(it, w){
+  const times = stageTimes(w);
+  const vias = w.stages.map(s=>{
+    const t = times[s.stage];
+    const d = t.elapsed!=null ? dur(t.elapsed) : t.took!=null ? dur(t.took) : "";
+    return `<button type="button" class="via ${s.status}" data-act="stagelog" data-stage="${esc(s.stage)}" ${s.log?"":"disabled"}
+      title="${esc(s.stage)}${s.status==="stale"?", log stopped without pass or fail":""}${s.log?". Open log":". No log yet"}">
+      <span class="seg"></span><span class="pad">${s.status==="fail"?"&#10005;":""}</span>
+      <span class="lbl">${esc(stageName(s.stage))}</span><span class="dur">${esc(d)}</span></button>`;
+  }).join("");
+  let msgs = "";
+  const fs = w.stages.find(s=>s.status==="fail" && s.fail_info);
+  if(fs){
+    const fi = fs.fail_info;
+    msgs += `<div class="msg bad"><b>${esc(stageName(fs.stage))} failed</b> with ${fi.error_count??"?"} errors and ${fi.warning_count??"?"} warnings
+      <pre>${esc((fi.errors||[]).slice(0,3).join("\n"))}</pre></div>`;
+  }
+  const st = w.stages.find(s=>s.status==="stale" && s.stage===w.current);
+  if(st && w.state==="IDLE") msgs += `<div class="msg bad"><b>${esc(stageName(st.stage))} stopped</b>: its log was last written ${esc(ago(st.log_age))} and there is no pass or fail file. The job may have been killed or run out of resources.</div>`;
+  const rs = w.stages.find(s=>s.status==="running" && s.last_line);
+  if(rs) msgs += `<div class="msg run">${esc(rs.last_line)}</div>`;
+  const runDir = dirname(w.logs_dir);
+  const errBtn = fs ? `<button class="btn small" type="button" data-act="stageerrors" data-stage="${esc(fs.stage)}">Show errors in ${esc(stageName(fs.stage))}</button>` : "";
+  return `<div class="wire" role="group" aria-label="Stages. Press a stage to open its log.">${vias}</div>${msgs}
+    <div class="acts">${errBtn}${copyBtn(runDir, "Copy run directory")}${copyBtn(w.logs_dir, "Copy logs path")}
+      <span class="hint">Press a stage to open its log.</span></div>`;
+}
+
+function lecDetail(it, w){
+  const vias = w.phases.map(ph=>`<span class="via ${ph.status}" title="${esc(ph.label)}">
+      <span class="seg"></span><span class="pad"></span><span class="lbl">${esc(ph.label)}</span><span class="dur"></span></span>`).join("");
+  const kp = w.keypts||{};
+  const facts = [`Threads <b>${w.threads??"?"}</b>`, `Elapsed <b>${dur(w.elapse)||"?"}</b>`, `CPU <b>${dur(w.cpu)||"?"}</b>`,
+    `Peak memory <b>${w.mem_peak!=null?(w.mem_peak/1024).toFixed(1)+" GB":"?"}</b>`];
+  if(kp.golden!=null || kp.revised!=null) facts.push(`Key points <b>${num(kp.golden)} / ${num(kp.revised)}</b>`);
+  let msgs = "";
+  if(w.state==="SILENT" || w.state==="IDLE")
+    msgs += `<div class="msg warn">No output for ${dur(w.log_age)} during ${esc(w.current)}. Mapping and compare can stay quiet for hours; check the job on its host before assuming it died.</div>`;
+  if(w.summary){
+    const c = w.summary.counts||{};
+    msgs += `<div class="msg ${w.state==="COMPLETE"?"good":"bad"}">lec_summary.rpt: <b>${esc(w.summary.status||"?")}</b>
+      ${Object.keys(c).length?`<pre>${esc(Object.keys(c).map(k=>k+": "+c[k]).join("\n"))}</pre>`:""}</div>`;
+  }
+  return `<div class="wire">${vias}</div><div class="facts">${facts.map(f=>`<span>${f}</span>`).join("")}</div>${msgs}
+    <div class="acts"><button class="btn${w.state==="FAILED"||w.errors?"":" quiet"} small" type="button" data-act="${w.state==="FAILED"||w.errors?"showerrors":"openlog"}" data-id="${it.id}">${w.state==="FAILED"||w.errors?"Show errors":"Open LEC log"}</button>
+      ${copyBtn(dirname(w.logs_dir), "Copy run directory")}${copyBtn(w.log, "Copy log path")}</div>`;
+}
+
+function logDetail(it, w){
+  const thresh = `<label class="thresh">Alert when nothing is written for
+    <input type="number" min="1" step="5" value="${it.silent}" data-act="silent"> minutes</label>`;
+  if(w.kind==="file")
+    return `<div class="acts"><button class="btn quiet small" type="button" data-act="openlog" data-id="${it.id}">Open log</button>${copyBtn(w.path,"Copy path")}${thresh}</div>`;
+  const L = w.listing;
+  const files = L && !L.error ? L.entries.filter(e=>!e.dir) : [];
+  const list = !L ? `<div class="msg">Listing the folder...</div>` : L.error ? `<div class="msg bad">${esc(L.error)}</div>` :
+    `<div class="files">${files.map(f=>`<button type="button" data-act="filelog" data-file="${esc(f.name)}">
+      <span class="f">${esc(f.name)}</span><span class="r">${bytes(f.size)}</span><span class="r">${ago(f.age)||"just now"}</span></button>`).join("")
+      || `<div style="padding:10px 12px;color:var(--muted)">This folder has no files.</div>`}</div>`;
+  return `${list}<div class="acts">${w.newest?`<button class="btn quiet small" type="button" data-act="openlog" data-id="${it.id}">Open newest log</button>`:""}${copyBtn(w.path,"Copy folder path")}${thresh}</div>`;
+}
+
+function renderConn(){
+  const c = R.conn, st = S.settings, chip = $("#connChip");
+  chip.dataset.state = c.state;
+  chip.classList.toggle("err", !!c.error && c.state!=="connected");
+  const host = ((c.remote&&c.remote.host) || (c.target&&c.target.host) || st.host || "").split(".")[0];
+  $("#connText").textContent = c.state==="connected" ? `${(c.remote&&c.remote.user)||st.user}@${host}` :
+    c.state==="connecting" ? `Connecting to ${host}` : "Not connected";
+  const m = $("#connMsg");
+  m.hidden = !(c.error || c.state==="connected");
+  m.className = c.state==="connected" ? "ok" : "err";
+  m.textContent = c.state==="connected" ? `Connected to ${c.remote.host}, Python ${c.remote.python}.` : (c.error||"");
+  $("#bConnect").disabled = c.state==="connecting";
+  $("#bConnect").textContent = c.state==="connected" ? "Reconnect" : c.state==="connecting" ? "Connecting..." : "Connect";
+  $("#bDisconnect").hidden = c.state!=="connected";
+}
+
+function renderBanner(){
+  const box = $("#bannerBox");
+  let html = "";
+  if(R.alarm) html += `<div class="alarm${R.alarm.good?" ok":""}" role="alert"><span>${esc(R.alarm.text)}</span>
+      <button class="btn small" type="button" data-act="stopalarm">Dismiss</button></div>`;
+  if(R.conn.state==="connected" && R.scanError){
+    const hint = /unknown op/.test(R.scanError) ? " The desktop helper is out of date: run start_monitor.bat again." : "";
+    html += `<div class="off"><span>Couldn't check the blocks: ${esc(R.scanError)}.${hint}</span>
+      <button class="btn small" type="button" data-act="retry">Try again</button></div>`;
+  }
+  if(R.conn.state!=="connected" && allItems().length){
+    const when = R.lastOk ? ` Last update ${R.lastOk.toLocaleTimeString()}.` : "";
+    const why = R.conn.state==="connecting" ? "Connecting..." :
+      R.conn.retryIn ? `Connection lost, retrying in ${R.conn.retryIn} s.` : (R.conn.error || "Not connected.");
+    html += `<div class="off"><span>${esc(why)}${when}</span>${R.conn.state==="connecting"?"":
+      `<button class="btn small" type="button" data-act="connect">Connect</button>`}</div>`;
+  }
+  box.innerHTML = html; box.hidden = !html;
+}
+
+// ---------------------------------------------------------------- log drawer
+function openLog(path, label, view){
+  T.open = true;
+  $("#drawer").classList.add("on"); $("#shade").classList.add("on"); $("#drawer").setAttribute("aria-hidden","false");
+  if(T.path!==path) Object.assign(T, {path, label, offset:null, ino:null, lines:[], meta:null, error:null, jump:true, grep:{}, gsel:0, occ:0, ctx:null});
+  else { T.label = label; T.jump = true; }
+  $("#logFilter").value = "";
+  setView(view || "tail");
+  if(!T.grep.error) loadGrep("error");
+  setTimeout(()=>$("#bCloseLog").focus(), 50);
+}
+function closeLog(){
+  T.open = false;
+  $("#drawer").classList.remove("on"); $("#shade").classList.remove("on"); $("#drawer").setAttribute("aria-hidden","true");
+}
+function setView(v){
+  T.view = v;
+  if(v==="tail"){ T.jump = true; fetchTail(); }
+  else if(!T.grep[v]) loadGrep(v);
+  else if(!T.ctx || T.ctx.kind!==v) selectGroup(0, 0);
+  renderDrawer();
+}
+function refreshDrawer(){ if(T.view==="tail") fetchTail(); else { T.grep = {}; T.ctx = null; loadGrep(T.view); if(T.view!=="error") loadGrep("error"); } }
+
+async function fetchTail(){
+  if(!T.open || T.view!=="tail" || !T.path || T.busy || R.conn.state!=="connected") return;
+  T.busy = true;
+  const want = T.path;
+  try{
+    const d = await call("tail", {path:T.path, offset:T.offset, ino:T.ino, n:1000});
+    if(want!==T.path) return;
+    if(d.error){ T.error = d.error; T.meta = null; renderDrawer(); return; }
+    T.error = null;
+    const changed = d.reset || d.lines.length;
+    if(d.reset) T.lines = [];
+    if(d.lines.length){ T.lines.push(...d.lines); if(T.lines.length>MAX_LINES) T.lines.splice(0, T.lines.length-MAX_LINES); }
+    T.offset = d.offset; T.ino = d.ino; T.meta = {age:d.age, size:d.size};
+    if(changed && T.view==="tail") renderBody(); renderHead();
+  }catch(e){}
+  finally{ T.busy = false; }
+}
+async function loadGrep(kind){
+  if(R.conn.state!=="connected" || !T.path) return;
+  const want = T.path;
+  T.grep[kind] = {loading:true};
+  renderDrawer();
+  try{
+    const d = await call("grep", {path:T.path, kind});
+    if(want!==T.path) return;
+    T.grep[kind] = d;
+    if(T.view===kind && !d.error && d.groups.length) return selectGroup(0, 0);
+  }catch(e){ T.grep[kind] = {error:e.message}; }
+  renderDrawer();
+}
+async function selectGroup(i, occ){
+  const g = T.grep[T.view]; if(!g || !g.groups || !g.groups[i]) { renderDrawer(); return; }
+  T.gsel = i; T.occ = Math.max(0, Math.min(occ, g.groups[i].lines.length-1));
+  const line = g.groups[i].lines[T.occ], kind = T.view, want = T.path;
+  T.ctx = {kind, hit:line, loading:true};
+  renderDrawer();
+  try{
+    const d = await call("range", {path:T.path, start:Math.max(1, line-CTX), count:CTX*2+1});
+    if(want!==T.path || T.view!==kind) return;
+    T.ctx = {kind, hit:line, start:d.start, lines:d.lines||[], error:d.error};
+  }catch(e){ T.ctx = {kind, hit:line, error:e.message}; }
+  renderDrawer();
+  const hit = $("#logBody .hitline");
+  if(hit) hit.scrollIntoView({block:"center"});
+}
+function stepOcc(delta){
+  const g = T.grep[T.view]; if(!g || !g.groups) return;
+  const grp = g.groups[T.gsel]; if(!grp) return;
+  const n = T.occ + delta;
+  if(n>=0 && n<grp.lines.length) selectGroup(T.gsel, n);
+  else if(delta>0 && T.gsel+1<g.groups.length) selectGroup(T.gsel+1, 0);
+  else if(delta<0 && T.gsel>0) selectGroup(T.gsel-1, g.groups[T.gsel-1].lines.length-1);
+}
+
+function colorize(line, f){
+  let h = esc(line);
+  if(f){ const rx = new RegExp(esc(f).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"), "gi"); h = h.replace(rx, m=>`<mark>${m}</mark>`); }
+  if(/^\s*(?:\/\/\s*|[\w.-]+>\s*)?(Error|ERROR|INTEL_ERROR|APEX_ERROR|Fatal|FATAL|INTEL_FATAL)\b/.test(line)) return `<span class="e">${h}</span>`;
+  if(/^\s*(?:\/\/\s*|[\w.-]+>\s*)?(Warning|WARNING|INTEL_WARNING)\b/.test(line)) return `<span class="w">${h}</span>`;
+  return h;
+}
+function renderHead(){
+  $("#logTitle").textContent = T.label || (T.path||"").split("/").pop() || "Log";
+  $("#logPath").textContent = T.path || "";
+  $("#logMeta").textContent = T.meta ? `${bytes(T.meta.size)}, last written ${ago(T.meta.age)||"just now"}` : "";
+}
+function renderDrawer(){
+  renderHead();
+  document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.view===T.view));
+  const cnt = k => { const g = T.grep[k]; return g && g.total!=null ? ` ${g.total>=1000?num(g.total):g.total}` : ""; };
+  $("#cntErr").textContent = cnt("error"); $("#cntWarn").textContent = cnt("warning");
+  $("#followL").hidden = T.view!=="tail";
+  $("#logFilter").placeholder = T.view==="tail" ? "Filter lines" : "Filter messages";
+  const grpPane = $("#grpPane"), bar = $("#ctxBar");
+  if(T.view==="tail"){ grpPane.hidden = true; bar.hidden = true; renderBody(); return; }
+  const g = T.grep[T.view];
+  grpPane.className = "grp " + T.view;
+  if(!g || g.loading || g.error || !g.groups || !g.groups.length){ grpPane.hidden = true; bar.hidden = true; renderBody(); return; }
+  const fl = $("#logFilter").value.trim().toLowerCase();
+  grpPane.hidden = false;
+  grpPane.innerHTML = g.groups.map((x,i)=> fl && !x.text.toLowerCase().includes(fl) ? "" :
+    `<button type="button" data-g="${i}" aria-current="${i===T.gsel}"><span class="c">&times;${x.count}</span>
+      <span class="t" title="${esc(x.text)}">${esc(x.text)}</span><span class="l">line ${num(x.lines[0])}</span></button>`).join("")
+    || `<div style="padding:10px 18px;color:var(--muted)">No messages match the filter.</div>`;
+  const grp = g.groups[T.gsel];
+  bar.hidden = !grp;
+  if(grp){
+    const shown = grp.lines.length < grp.count ? ` (first ${grp.lines.length} listed)` : "";
+    bar.innerHTML = `<span>Line <b>${num(grp.lines[T.occ])}</b>, occurrence ${T.occ+1} of ${grp.count}${shown}</span>
+      <span class="sp"></span><button class="btn quiet small" type="button" data-step="-1">Previous</button>
+      <button class="btn quiet small" type="button" data-step="1">Next</button>`;
+  }
+  renderBody();
+}
+function renderBody(){
+  const pre = $("#logBody");
+  if(R.conn.state!=="connected" && !T.lines.length && !T.ctx){ pre.innerHTML = `<span class="ph">Connect to the host to read this log.</span>`; return; }
+  if(T.view==="tail"){
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40;
+    if(T.error){ pre.innerHTML = `<span class="ph">${esc(T.error)}</span>`; return; }
+    if(T.meta===null){ pre.innerHTML = `<span class="ph">Loading the end of the log...</span>`; return; }
+    const f = $("#logFilter").value.trim(), fl = f.toLowerCase();
+    const lines = fl ? T.lines.filter(l=>l.toLowerCase().includes(fl)) : T.lines;
+    pre.innerHTML = lines.length ? lines.map(l=>colorize(l,f)).join("\n")
+      : `<span class="ph">${T.lines.length ? "No lines match the filter." : "The log is empty so far."}</span>`;
+    if(T.jump || ($("#logFollow").checked && atBottom)) pre.scrollTop = pre.scrollHeight;
+    T.jump = false;
+    return;
+  }
+  const g = T.grep[T.view], what = T.view==="error" ? "errors" : "warnings";
+  if(!g || g.loading){ pre.innerHTML = `<span class="ph">Scanning the whole log for ${what}...</span>`; return; }
+  if(g.error){ pre.innerHTML = `<span class="ph">${esc(g.error)}</span>`; return; }
+  if(!g.groups.length){ pre.innerHTML = `<span class="ph">No ${what} in this log (${num(g.line_count)} lines checked).</span>`; return; }
+  const c = T.ctx;
+  if(!c || c.loading){ pre.innerHTML = `<span class="ph">Loading the lines around it...</span>`; return; }
+  if(c.error){ pre.innerHTML = `<span class="ph">${esc(c.error)}</span>`; return; }
+  pre.innerHTML = c.lines.map((l,i)=>{
+    const n = c.start + i, body = `<span class="ln">${n}</span>${colorize(l)}`;
+    return n===c.hit ? `<span class="hitline">${body}</span>` : body;
+  }).join("\n");
+}
+
+function openItemLog(it, w, which, view){
+  if(!w || w.error) return;
+  if(w.type==="apr"){
+    const s = w.stages.find(x=>x.stage===which && x.log) || w.stages.find(x=>x.stage===w.current && x.log)
+      || [...w.stages].reverse().find(x=>x.log);
+    if(!s) return;
+    const v = view || (s.status==="fail" ? "error" : "tail");
+    openLog(w.logs_dir+"/"+s.log, `${blockOf(w.logs_dir)}: ${stageName(s.stage)}`, v);
+  }else if(w.type==="lec"){
+    openLog(w.log, `${w.block}: LEC log`, view);
+  }else if(w.kind==="file"){
+    openLog(w.path, shortName(w.path), view);
+  }else{
+    const name = which || w.newest;
+    if(name) openLog(w.path.replace(/\/$/,"")+"/"+name, name, view);
+  }
+}
+
+// ---------------------------------------------------------------- alerts
+function askNotifyPermission(){
+  if(S.settings.notify && "Notification" in window && Notification.permission==="default") Notification.requestPermission();
+}
+function notify(title, body){
+  if(!S.settings.notify || !("Notification" in window) || Notification.permission!=="granted") return;
+  try{ new Notification(title, {body, tag:title}); }catch(e){}
+}
+function alarm(title, body, good){
+  notify(title, body);
+  R.alarm = {text: title + (body ? ". " + body : ""), good};
+  if(S.settings.sound){
+    if(!R.audio){ R.audio = new Audio("/api/sound"); R.audio.loop = true; }
+    R.audio.currentTime = 0;
+    R.audio.play().catch(()=>{ R.alarm.text += " (click the page once so Chrome allows the sound)"; renderBanner(); });
+    clearTimeout(R.alarmStop);
+    R.alarmStop = setTimeout(stopSound, (R.defaults.alarm_minutes||20)*60000);
+  }
+  renderBanner();
+}
+function stopSound(){ if(R.audio) R.audio.pause(); }
+function stopAlarm(){ stopSound(); R.alarm = null; renderBanner(); }
+function checkAlerts(){
+  for(const {flow, cat, it} of allItems()){
+    const w = R.data[it.id]; if(!w || w.error) continue;
+    const s = summary(it);
+    const who = `${flowOf(flow).name} ${s.name}${it.label?" ("+it.label+")":""} in ${cat.name}`;
+    const prev = R.prev[it.id];
+    R.prev[it.id] = s.state;
+    if(prev===undefined || prev===s.state) continue;
+    if(s.state==="FAILED") alarm(`${who} failed`, s.why);
+    else if(s.state==="STOPPED") alarm(`${who} stopped`, s.why);
+    else if(s.state==="COMPLETE") alarm(`${who} finished`, w.type==="lec" ? `Result: ${w.final_status||"done"}.` : "All stages passed.", true);
+    else if(s.state==="SILENT" && w.type==="log") alarm(`${who} went quiet`, s.why);
+  }
+}
+
+// ---------------------------------------------------------------- menus and dialogs
+function showMenu(anchor, html, handler){
+  const m = $("#menu");
+  m.innerHTML = html; m.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const left = Math.min(r.right - m.offsetWidth, window.innerWidth - m.offsetWidth - 8);
+  let top = r.bottom + 4;
+  if(top + m.offsetHeight > window.innerHeight - 8) top = r.top - m.offsetHeight - 4;
+  m.style.left = Math.max(8,left)+"px"; m.style.top = Math.max(8,top)+"px";
+  m.onclick = e=>{ const b = e.target.closest("button[data-m]"); if(!b) return; hideMenu(); handler(b.dataset.m, b.dataset.v); };
+  const first = m.querySelector("button"); if(first) first.focus();
+}
+function hideMenu(){ $("#menu").hidden = true; }
+function askText(title, label, value){
+  return new Promise(res=>{
+    const d = $("#dlgText");
+    $("#textTitle").textContent = title; $("#textLabel").textContent = label; $("#textValue").value = value||"";
+    d.onclose = ()=>res(d.returnValue==="ok" ? $("#textValue").value.trim() : null);
+    d.returnValue = ""; d.showModal(); $("#textValue").select();
+  });
+}
+
+let catDlg = {mode:"new", cat:null};
+function openCatDialog(mode, cat){
+  const f = flowOf(S.tab);
+  catDlg = {mode, cat};
+  $("#catTitle").textContent = mode==="new" ? `New ${f.noun} category` : mode==="edit" ? "Edit category" : `Add ${f.noun} paths to ${cat.name}`;
+  $("#catNameL").hidden = mode==="add"; $("#catNoteL").hidden = mode==="add"; $("#catPathsL").hidden = mode==="edit";
+  $("#catName").value = cat ? cat.name : ""; $("#catNote").value = cat ? cat.note : ""; $("#catPaths").value = "";
+  $("#catPaths").placeholder = f.example; $("#catHint").textContent = f.hint;
+  $("#catOk").textContent = mode==="new" ? "Create category" : mode==="edit" ? "Save" : "Add";
+  const d = $("#dlgCat"); d.returnValue = ""; d.showModal();
+  (mode==="add" ? $("#catPaths") : $("#catName")).focus();
+}
+function submitCat(){
+  const lines = parseLines($("#catPaths").value);
+  let cat = catDlg.cat;
+  if(catDlg.mode==="new"){ cat = newCat($("#catName").value.trim()||"Untitled", $("#catNote").value.trim()); cats().push(cat); }
+  if(catDlg.mode==="edit"){ cat.name = $("#catName").value.trim()||cat.name; cat.note = $("#catNote").value.trim(); }
+  for(const l of lines) if(!cat.items.some(i=>i.path===l.path)) cat.items.push(newItem(l.path, "auto", l.label));
+  save(); render(); if(lines.length) tick();
+}
+
+function itemMenu(btn, id){
+  const f = findItem(id); if(!f) return;
+  const others = cats(f.flow).filter(c=>c!==f.cat);
+  const html = `<button data-m="label">${f.it.label?"Edit label":"Add a label"}</button>
+    <button data-m="copy">Copy path</button>
+    ${others.length?`<div class="sep"></div><div class="hd">Move to</div>${others.map(c=>`<button data-m="move" data-v="${c.id}">${esc(c.name)}</button>`).join("")}`:""}
+    <div class="sep"></div><button data-m="detect">Detect the type again</button>
+    <button data-m="remove" class="danger">Stop watching</button>`;
+  showMenu(btn, html, async (m, v)=>{
+    if(m==="label"){ const t = await askText("Label", "What is this block for?", f.it.label); if(t!==null){ f.it.label = t; save(); render(); } }
+    if(m==="copy") copyText(f.it.path);
+    if(m==="move"){ const to = cats(f.flow).find(c=>c.id===v); f.cat.items = f.cat.items.filter(i=>i!==f.it); to.items.push(f.it); save(); render(); }
+    if(m==="detect"){ f.it.type = "auto"; delete R.data[f.it.id]; save(); render(); tick(); }
+    if(m==="remove"){ f.cat.items = f.cat.items.filter(i=>i!==f.it); delete R.data[id]; delete R.prev[id]; R.open.delete(id); save(); render(); }
+  });
+}
+function catMenu(btn, cat){
+  const html = `<button data-m="add">Add paths</button><button data-m="edit">Rename or edit note</button>
+    <div class="sep"></div><button data-m="delete" class="danger">Delete category</button>`;
+  showMenu(btn, html, m=>{
+    if(m==="add") openCatDialog("add", cat);
+    if(m==="edit") openCatDialog("edit", cat);
+    if(m==="delete"){
+      if(cat.items.length && !confirm(`Delete "${cat.name}" and stop watching its ${cat.items.length} blocks? Nothing on the host is touched.`)) return;
+      S.flows[S.tab].cats = cats().filter(c=>c!==cat); save(); render();
+    }
+  });
+}
+
+function copyText(text, btn){
+  const done = ()=>{ if(!btn) return; const o = btn.textContent; btn.textContent = "Copied"; setTimeout(()=>btn.textContent = o, 1200); };
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, ()=>prompt("Copy this path:", text));
+  else prompt("Copy this path:", text);
+}
+
+const keyNotes = {f:"", g:""};
+async function renderKeyBox(p){
+  const box = $(`#${p}KeyBox`), field = $(`#${p}Key`);
+  let k;
+  try{ k = await (await fetch("/api/keyinfo")).json(); }catch(e){ box.innerHTML = ""; return; }
+  const typed = field.value.trim();
+  if(!typed && k.key){ field.value = k.key; }
+  const note = keyNotes[p] ? `<span class="msgline">${keyNotes[p]}</span>` : "";
+  if(!k.key && !typed){
+    box.innerHTML = `<span class="bad">No SSH key found in ${esc(k.ssh_dir)}.</span>
+      <button class="btn quiet small" type="button" data-key="create">Create a key</button>${note}`;
+  }else{
+    box.innerHTML = `<span>First time on this host, or "permission denied"?</span>
+      <button class="btn quiet small" type="button" data-key="install">Install key on host</button>${note}`;
+  }
+}
+async function keyAction(what, p){
+  readConnFrom(p);
+  const st = S.settings;
+  try{
+    if(what==="create"){
+      const r = await fetch("/api/keygen", {method:"POST"}); const d = await r.json();
+      if(!r.ok) throw new Error(d.error);
+      $(`#${p}Key`).value = d.key; readConnFrom(p);
+      keyNotes[p] = `<span class="ok">Key created at ${esc(d.key)}.</span> Now press <b>Install key on host</b>.`;
+    }else{
+      const r = await fetch("/api/keyinstall", {method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({host:st.host, user:st.user, port:st.port, key:st.key})});
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error);
+      keyNotes[p] = `A PowerShell window opened. Type your Linux password there once; when it says "Key installed", press <b>Connect</b>.`;
+    }
+  }catch(e){ keyNotes[p] = `<span class="bad">${esc(e.message)}</span>`; }
+  renderKeyBox(p);
+}
+
+function openSettings(){
+  const st = S.settings;
+  fillConn("f");
+  $("#sInterval").value = String(st.interval); $("#sSound").checked = st.sound; $("#sNotify").checked = st.notify;
+  $("#sAprWin").value = st.aprWin; $("#sLecWin").value = st.lecWin; $("#sLecSilent").value = st.lecSilent;
+  document.querySelectorAll("input[name=theme]").forEach(r=>r.checked = r.value===st.theme);
+  $("#sAccent").value = currentAccent();
+  renderConn(); keyNotes.f = ""; renderKeyBox("f"); $("#dlgSettings").showModal();
+}
+
+function openGuide(){
+  const d = $("#dlgGuide");
+  if(!d.open) d.showModal();
+  d.querySelector(".gbody").scrollTop = 0;
+}
+
+function gotoItem(id){
+  const f = findItem(id); if(!f) return;
+  f.cat.collapsed = false; R.open.add(id); save(); render();
+  const el = document.getElementById("it-"+id);
+  if(el){ el.scrollIntoView({block:"center", behavior:"smooth"}); el.classList.add("flash"); }
+}
+
+// ---------------------------------------------------------------- events
+function bind(){
+  $("#bNewCat").onclick = ()=>openCatDialog("new");
+  $("#bGuide").onclick = openGuide;
+  $("#bCloseGuide").onclick = ()=>$("#dlgGuide").close();
+  $("#dlgGuide nav").addEventListener("click", e=>{
+    const a = e.target.closest("a[href^='#g']"); if(!a) return;
+    e.preventDefault();
+    const el = document.getElementById(a.getAttribute("href").slice(1));
+    if(el) el.scrollIntoView({block:"start", behavior:"smooth"});
+  });
+  $("#connChip").onclick = openSettings;
+  $("#bSettings").onclick = openSettings;
+  $("#bTheme").onclick = ()=>{ S.settings.theme = effectiveTheme()==="dark" ? "light" : "dark"; save(); applyTheme(); };
+  matchMedia("(prefers-color-scheme: light)").addEventListener("change", ()=>{ if(S.settings.theme==="system") applyTheme(); });
+  document.querySelectorAll("input[name=theme]").forEach(r=>r.onchange = ()=>{ S.settings.theme = r.value; save(); applyTheme(); if(!S.settings.accent) $("#sAccent").value = currentAccent(); });
+  $("#sAccent").oninput = e=>{ S.settings.accent = e.target.value; save(); applyTheme(); };
+  $("#bAccentReset").onclick = ()=>{ S.settings.accent = null; save(); applyTheme(); $("#sAccent").value = currentAccent(); };
+  $("#catForm").addEventListener("submit", e=>{ if(e.submitter && e.submitter.value==="ok") submitCat(); });
+  $("#bConnect").onclick = ()=>connect(false, "f");
+  $("#gateForm").addEventListener("submit", e=>{ e.preventDefault(); connect(false, "g"); });
+  for(const p of ["f","g"])
+    $(`#${p}KeyBox`).addEventListener("click", e=>{ const b = e.target.closest("[data-key]"); if(b) keyAction(b.dataset.key, p); });
+  $("#bDisconnect").onclick = disconnect;
+  $("#sInterval").onchange = e=>{ S.settings.interval = +e.target.value; save(); schedule(); };
+  $("#sSound").onchange = e=>{ S.settings.sound = e.target.checked; save(); if(!e.target.checked) stopSound(); };
+  $("#sNotify").onchange = e=>{ S.settings.notify = e.target.checked; save(); askNotifyPermission(); };
+  for(const [id,key] of [["#sAprWin","aprWin"],["#sLecWin","lecWin"],["#sLecSilent","lecSilent"]])
+    $(id).onchange = e=>{ S.settings[key] = parseInt(e.target.value,10)||S.settings[key]; save(); };
+  $("#bTest").onclick = ()=>{ askNotifyPermission(); alarm("Test alert", "This is how an alert looks and sounds."); };
+
+  $("#tabs").addEventListener("click", e=>{
+    const b = e.target.closest("[data-tab]"); if(!b) return;
+    S.tab = b.dataset.tab; save(); render(); window.scrollTo({top:0});
+  });
+
+  document.addEventListener("click", e=>{
+    if(!e.target.closest("#menu") && !e.target.closest("[data-act$=menu]")) hideMenu();
+    const a = e.target.closest("[data-act]"); if(!a || a.closest("#drawer")) return;
+    const act = a.dataset.act;
+    const itemEl = a.closest("[data-item]"), catEl = a.closest("[data-cat]");
+    const f = a.dataset.id ? findItem(a.dataset.id) : itemEl && findItem(itemEl.dataset.item);
+    const cat = catEl && cats().find(c=>c.id===catEl.dataset.cat);
+    if(act==="newcat") openCatDialog("new");
+    else if(act==="guide") openGuide();
+    else if(act==="connect") connect(false);
+    else if(act==="retry") tick();
+    else if(act==="stopalarm") stopAlarm();
+    else if(act==="toggle"){ cat.collapsed = !cat.collapsed; save(); render(); }
+    else if(act==="catmenu") catMenu(a, cat);
+    else if(act==="addpaths") openCatDialog("add", cat);
+    else if(act==="itemmenu") itemMenu(a, f.it.id);
+    else if(act==="goto") gotoItem(f.it.id);
+    else if(act==="copy") copyText(a.dataset.text, a);
+    else if(act==="expand"){
+      const id = f.it.id;
+      if(R.open.has(id)) R.open.delete(id); else { R.open.add(id); const w = R.data[id]; if(w && w.type==="log" && w.kind==="dir") loadListing(f.it); }
+      render();
+    }
+    else if(act==="stagelog") openItemLog(f.it, R.data[f.it.id], a.dataset.stage);
+    else if(act==="stageerrors") openItemLog(f.it, R.data[f.it.id], a.dataset.stage, "error");
+    else if(act==="filelog") openItemLog(f.it, R.data[f.it.id], a.dataset.file);
+    else if(act==="openlog") openItemLog(f.it, R.data[f.it.id]);
+    else if(act==="showerrors"){
+      const w = R.data[f.it.id];
+      const fs = w && w.type==="apr" && w.stages.find(s=>s.status==="fail");
+      openItemLog(f.it, w, fs ? fs.stage : undefined, "error");
+    }
+  });
+  document.addEventListener("change", e=>{
+    if(e.target.dataset.act!=="silent") return;
+    const f = findItem(e.target.closest("[data-item]").dataset.item);
+    f.it.silent = Math.max(1, parseInt(e.target.value,10)||50); save(); checkAlerts(); render();
+  });
+
+  $("#shade").onclick = closeLog;
+  $("#bCloseLog").onclick = closeLog;
+  $("#bCopyLog").onclick = e=>{ if(T.path) copyText(T.path, e.currentTarget); };
+  document.querySelectorAll(".seg button").forEach(b=>b.onclick = ()=>setView(b.dataset.view));
+  $("#grpPane").addEventListener("click", e=>{ const b = e.target.closest("[data-g]"); if(b) selectGroup(+b.dataset.g, 0); });
+  $("#ctxBar").addEventListener("click", e=>{ const b = e.target.closest("[data-step]"); if(b) stepOcc(+b.dataset.step); });
+  $("#logFilter").oninput = ()=>{ if(T.view==="tail") renderBody(); else renderDrawer(); };
+  $("#logWrap").onchange = e=>$("#logBody").classList.toggle("wrap", e.target.checked);
+  $("#logFollow").onchange = e=>{ if(e.target.checked){ T.jump = true; fetchTail(); } };
+
+  document.addEventListener("keydown", e=>{
+    if(document.querySelector("dialog[open]")) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+    if(e.key==="Escape"){ if(!$("#menu").hidden) hideMenu(); else if(T.open) closeLog(); else stopAlarm(); return; }
+    if(T.open && !typing && T.view!=="tail"){
+      if(e.key==="n" || e.key==="ArrowDown" && e.altKey){ e.preventDefault(); stepOcc(1); }
+      if(e.key==="p" || e.key==="ArrowUp" && e.altKey){ e.preventDefault(); stepOcc(-1); }
+    }
+  });
+  window.addEventListener("scroll", hideMenu, {passive:true});
+}
+async function loadListing(it){
+  if(R.conn.state!=="connected") return;
+  try{
+    const w = R.data[it.id];
+    const L = await call("list", {path:w.path});
+    if(R.data[it.id]) R.data[it.id].listing = L;
+    render();
+  }catch(e){}
+}
+
+async function init(){
+  let helperUp = true;
+  try{ S = await loadState(); }
+  catch(e){ helperUp = false; R.defaults = {}; S = {v:3, tab:"apr", settings:baseSettings({}), flows:emptyFlows()}; }
+  applyTheme(); bind(); render();
+  fillConn("g"); renderKeyBox("g");
+  if(!helperUp){ setConn({state:"disconnected", error:"The desktop helper isn't running. Start it with start_monitor.bat."}); return; }
+  save();
+  try{ setConn(await (await fetch("/api/conn")).json()); }
+  catch(e){ setConn({state:"disconnected", error:"The desktop helper isn't running. Start it with start_monitor.bat."}); }
+  if(R.conn.state==="connected"){ R.everConnected = true; tick(); }
+  else if(S.settings.autoconnect && S.settings.host){ R.everConnected = true; connect(true); }
+  else $(S.settings.host ? "#gConnect" : "#gHost").focus();
+  schedule();
+  setInterval(()=>{ if(T.open && T.view==="tail" && $("#logFollow").checked) fetchTail(); }, TAIL_MS);
+  setInterval(watchHelper, 4000);
+}
+// When the helper is gone, say so and close the window (allowed for the app window it opened).
+let helperMissed = 0;
+async function watchHelper(){
+  try{
+    await fetch("/api/conn", {cache:"no-store"});
+    if(helperMissed >= 2) location.reload();
+    helperMissed = 0;
+  }catch(e){
+    if(++helperMissed === 2){ $("#stopped").hidden = false; window.close(); }
+  }
+}
+init();
+</script>
+</body>
+</html>
